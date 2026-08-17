@@ -7,11 +7,13 @@ não sobrecarregar a GPU.
 > Testado em: NVIDIA RTX 3060 12GB, host TrueNAS, deploy via `docker compose`.
 
 ### Limitacoes conhecidas (RTX 3060 12GB)
-- **`/generate/model2` (SDXL)** funciona 100% (fp16, ~7-10GB VRAM com
-  `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`).
-- **`/generate/flux` (FLUX.1-schnell)** exige `HF_TOKEN` valido (repo e *gated*)
-  e roda em 4-bit (`bitsandbytes`). O transformer 12B ocupa ~11.5GB so no
-  calculo — em 12GB pode dar OOM; recomenda-se GPU com >=16GB para FLUX.
+- **FLUX.1-schnell** roda nesta 12GB usando a receita da GTX 1650 4GB:
+  `torch_dtype=bfloat16` (sem quantizacao) + `enable_sequential_cpu_offload()`
+  + `enable_vae_tiling()`. O texto (T5) roda em CPU, entao cada geracao demora
+  ~5-8 min no host — mas funciona e nao da OOM.
+- **model2 / SDXL** funciona 100% (fp16, ~7-10GB VRAM com
+  `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`), e e mais rapido.
+- **FLUX exige `HF_TOKEN`** valido (repo e *gated*).
 - A imagem precisa de **`gcc` + `python3-dev`** (o `bitsandbytes`/`triton`
   compila dentro do container). Veja "Build da imagem" abaixo.
 
@@ -19,14 +21,25 @@ não sobrecarregar a GPU.
 
 ## O que faz
 
-| Endpoint | Modelo (modelo A) | Modelo (modelo B) |
-|---|---|---|
-| `POST /generate/flux` | `FLUX.1-schnell` (Apache-2.0, few-step) | — |
-| `POST /generate/model2` | — | `stable-diffusion-xl-base-1.0` (fp16) |
+Endpoints:
 
-Cada request recebe um **prompt**, a **orientação** (`w` = wide 16:9 1024x576,
-`t` = vertical 9:16 576x1024), a **quantidade de interações** (`num_inference_steps`,
-os "loops") e a `seed`. A imagem é salva em `/app/output` e pode ser baixada.
+| Método | Endpoint | Função |
+|---|---|---|
+| GET | `/health` | status + modelos carregados |
+| GET | `/models` | ids e repos dos modelos |
+| POST | `/generate` | gera imagem e **retorna o PNG direto** |
+
+O body do `/generate` escolhe o modelo:
+
+| Campo `model` | Modelo |
+|---|---|
+| `"flux"` | `FLUX.1-schnell` (Apache-2.0, few-step) |
+| `"model2"` | `stable-diffusion-xl-base-1.0` (fp16) |
+
+Cada request recebe um **prompt**, o **model** (`flux`|`model2`), a
+**orientação** (`w` = wide 16:9 1024x576, `t` = vertical 9:16 576x1024), a
+**quantidade de interações** (`num_inference_steps`, os "loops") e a `seed`.
+O endpoint retorna a imagem PNG diretamente (FileResponse).
 
 ### Concorrência (regra de ouro)
 A GPU é serial por natureza. **Todas as gerações passam por um executor de 1
@@ -121,21 +134,32 @@ curl http://SEU_HOST:8000/health
 # {"status":"ok","models_loaded":{"flux":false,"model2":false}}
 ```
 
-### Gerar imagem wide (FLUX.1-schnell), 4 loops
+### Gerar imagem FLUX.1-schnell wide (horizontal), 4 loops
 ```bash
-curl -X POST http://SEU_HOST:8000/generate/flux \
+curl -X POST http://SEU_HOST:8000/generate \
   -H "Content-Type: application/json" \
-  -d '{"prompt":"um lago sereno ao por do sol, luz volumetrica","orientation":"w","num_inference_steps":4}'
+  -d '{"model":"flux","prompt":"um lago sereno ao por do sol, luz volumetrica","orientation":"w","num_inference_steps":4}'
+# retorna o PNG direto (salve com -o saida.png)
 ```
 
-### Gerar imagem vertical (modelo 2 / SDXL), 6 loops
+### Gerar imagem FLUX.1-schnell vertical, 4 loops
 ```bash
-curl -X POST http://SEU_HOST:8000/generate/model2 \
+curl -X POST http://SEU_HOST:8000/generate \
   -H "Content-Type: application/json" \
-  -d '{"prompt":"viajante solitario num penhasco ao amanhecer","orientation":"t","num_inference_steps":6,"seed":7}'
+  -d '{"model":"flux","prompt":"um lago sereno ao por do sol, luz volumetrica","orientation":"t","num_inference_steps":4}' -o flux_vertical.png
 ```
 
-### Baixar a imagem gerada
+### Gerar imagem SDXL (model2) wide, 4 loops
+```bash
+curl -X POST http://SEU_HOST:8000/generate \
+  -H "Content-Type: application/json" \
+  -d '{"model":"model2","prompt":"viajante solitario num penhasco ao amanhecer","orientation":"w","num_inference_steps":4}' -o sdxl_wide.png
+```
+
+> FLUX na 12GB usa `sequential_cpu_offload` (texto em CPU) → cada geracao
+> leva ~5-8 min. SDXL e mais rapido. A API serializa 1 request por vez.
+
+### Baixar a imagem gerada (pelo filename, sem GPU)
 ```bash
 curl http://SEU_HOST:8000/image/<filename> -o saida.png
 ```
