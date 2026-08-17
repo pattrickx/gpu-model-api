@@ -82,8 +82,8 @@ def _load_model2() -> Any:
     return pipe
 
 
-_LOADERS = {"flux": _load_flux, "model2": _load_model2}
-_REPOS = {"flux": cfg.MODEL_A_REPO, "model2": cfg.MODEL_B_REPO}
+_LOADERS = {"flux": _load_model2, "model2": _load_model2}
+_REPOS = {"flux": cfg.MODEL_B_REPO, "model2": cfg.MODEL_B_REPO}
 
 
 def _get_pipe(model: str) -> Any:
