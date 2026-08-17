@@ -35,8 +35,14 @@ _PIPES_LOCK = threading.Lock()
 
 
 def _load_flux() -> Any:
-    """Load FLUX.1-schnell (4-bit transformer + bf16 VAE) onto the GPU."""
-    from diffusers import FluxPipeline, AutoencoderKL
+    """Load FLUX.1-schnell with 4-bit quantization + CPU offload + VAE tiling.
+
+    This is the recipe that runs FLUX on a 4 GB GPU (e.g. GTX 1650): the
+    4-bit transformer (~6 GB) lives in host RAM, layers are moved to the GPU
+    one at a time (enable_model_cpu_offload), and the VAE decodes in tiles to
+    avoid the VRAM spike. Requires enough host RAM for the quantized weights.
+    """
+    from diffusers import FluxPipeline
 
     repo = cfg.MODEL_A_REPO
     nf4 = {
@@ -52,15 +58,10 @@ def _load_flux() -> Any:
         quantization_config=nf4,
         low_cpu_mem_usage=True,
     )
-    # Replace the 4-bit VAE with a bf16 one to avoid the decode VRAM spike.
-    pipe.vae = AutoencoderKL.from_pretrained(
-        repo,
-        subfolder="vae",
-        torch_dtype=torch.bfloat16,
-        low_cpu_mem_usage=True,
-    )
+    # Keep weights on CPU; stream layers to GPU per call (fits 4 GB VRAM).
+    pipe.enable_model_cpu_offload()
+    pipe.enable_vae_tiling()
     pipe.enable_vae_slicing()
-    pipe.to("cuda")
     return pipe
 
 
@@ -82,8 +83,8 @@ def _load_model2() -> Any:
     return pipe
 
 
-_LOADERS = {"flux": _load_model2, "model2": _load_model2}
-_REPOS = {"flux": cfg.MODEL_B_REPO, "model2": cfg.MODEL_B_REPO}
+_LOADERS = {"flux": _load_flux, "model2": _load_model2}
+_REPOS = {"flux": cfg.MODEL_A_REPO, "model2": cfg.MODEL_B_REPO}
 
 
 def _get_pipe(model: str) -> Any:
