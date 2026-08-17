@@ -35,31 +35,28 @@ _PIPES_LOCK = threading.Lock()
 
 
 def _load_flux() -> Any:
-    """Load FLUX.1-schnell with 4-bit quantization + CPU offload + VAE tiling.
+    """Load FLUX.1-schnell the same way it runs on a 4 GB GPU (GTX 1650).
 
-    This is the recipe that runs FLUX on a 4 GB GPU (e.g. GTX 1650): the
-    4-bit transformer (~6 GB) lives in host RAM, layers are moved to the GPU
-    one at a time (enable_model_cpu_offload), and the VAE decodes in tiles to
-    avoid the VRAM spike. Requires enough host RAM for the quantized weights.
+    Mirrors the working Windows script:
+      * from_pretrained with torch_dtype=bfloat16, NO 4-bit quantization
+        (quantization with bitsandbytes kept the transformer in host RAM and
+        OOM-killed this low-RAM host).
+      * enable_sequential_cpu_offload() moves each submodule (text encoder,
+        transformer, VAE) to the GPU one at a time, so only one lives on the
+        4 GB VRAM at once.
+      * enable_vae_tiling() avoids the VAE decode VRAM spike.
     """
     from diffusers import FluxPipeline
 
     repo = cfg.MODEL_A_REPO
-    nf4 = {
-        "load_in_4bit": True,
-        "bnb_4bit_quant_type": "nf4",
-        "bnb_4bit_compute_dtype": torch.bfloat16,
-        "bnb_4bit_use_double_quant": True,
-    }
     pipe = FluxPipeline.from_pretrained(
         repo,
         token=cfg.HF_TOKEN or None,
         torch_dtype=torch.bfloat16,
-        quantization_config=nf4,
         low_cpu_mem_usage=True,
     )
-    # Keep weights on CPU; stream layers to GPU per call (fits 4 GB VRAM).
-    pipe.enable_model_cpu_offload()
+    # Sequential offload: one submodule on the GPU at a time (fits 4 GB VRAM).
+    pipe.enable_sequential_cpu_offload()
     pipe.enable_vae_tiling()
     pipe.enable_vae_slicing()
     return pipe
@@ -112,12 +109,18 @@ def _run_job(
     with _gpu_lock:
         pipe = _get_pipe(model)
         generator = torch.Generator("cuda").manual_seed(seed)
+        # FLUX.1-schnell uses guidance_scale=0 and a longer token context,
+        # matching the working 4 GB script.
+        extra = {}
+        if model == "flux":
+            extra = {"guidance_scale": 0, "max_sequence_length": 512}
         image = pipe(
             prompt=prompt,
             width=width,
             height=height,
             num_inference_steps=steps,
             generator=generator,
+            **extra,
         ).images[0]
         out = cfg.output_path(model, width, height, seed)
         image.save(out)
