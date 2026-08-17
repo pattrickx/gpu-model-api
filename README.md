@@ -4,7 +4,16 @@ API FastAPI para **geração de imagens com GPU** usando modelos de difusão
 (FLUX.1-schnell e um modelo secundário SDXL), com **1 request por vez** para
 não sobrecarregar a GPU.
 
-> Testado em: NVIDIA RTX 3060 12GB, host TrueNAS, deploy via Portainer (stack Git).
+> Testado em: NVIDIA RTX 3060 12GB, host TrueNAS, deploy via `docker compose`.
+
+### Limitacoes conhecidas (RTX 3060 12GB)
+- **`/generate/model2` (SDXL)** funciona 100% (fp16, ~7-10GB VRAM com
+  `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`).
+- **`/generate/flux` (FLUX.1-schnell)** exige `HF_TOKEN` valido (repo e *gated*)
+  e roda em 4-bit (`bitsandbytes`). O transformer 12B ocupa ~11.5GB so no
+  calculo — em 12GB pode dar OOM; recomenda-se GPU com >=16GB para FLUX.
+- A imagem precisa de **`gcc` + `python3-dev`** (o `bitsandbytes`/`triton`
+  compila dentro do container). Veja "Build da imagem" abaixo.
 
 ---
 
@@ -60,15 +69,28 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ## Deploy via Docker / Portainer
 
-### 1. Build da imagem (automático via GitHub Actions → GHCR)
-Ao fazer `push` para `main`, o workflow `.github/workflows/build.yml` builda e
-publica `ghcr.io/pattrickx/gpu-model-api:latest` (público).
+### 1. Build da imagem (GHCR)
+A imagem `ghcr.io/pattrickx/gpu-model-api:latest` ja esta publicada. Para
+rebuildar (ex.: mudar versoes), o `docker build` falha na rede do TrueNAS
+(buildkit isola a rede nas etapas RUN). Use o metodo que funciona:
 
-Ou build manual:
 ```bash
-docker build -t ghcr.io/pattrickx/gpu-model-api:latest .
+# No host com Docker + GPU e rede liberada (--network host):
+CID=$(docker run -d --network host -v $PWD:/build \
+  nvidia/cuda:12.4.0-runtime-ubuntu22.04 bash -c "
+  apt-get update && apt-get install -y --no-install-recommends \
+    python3-pip python3-dev build-essential git && \
+  pip3 install --no-cache-dir -r /build/requirements.txt && \
+  mkdir -p /app && cp -r /build/app /app && echo BUILD_OK")
+docker wait $CID
+docker commit $CID ghcr.io/pattrickx/gpu-model-api:latest
+printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u pattrickx --password-stdin
 docker push ghcr.io/pattrickx/gpu-model-api:latest
 ```
+
+(Opcional) o workflow `.github/workflows/build.yml` também builda no push,
+mas pode falhar por espaco/rede no runner — o metodo acima e o caminho
+garantido.
 
 ### 2. Pré-requisitos no host (TrueNAS / Linux GPU)
 - NVIDIA Container Toolkit instalado.
