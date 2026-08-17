@@ -1,0 +1,13 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-dotenv==1.0.1
+huggingface_hub==0.27.1
+diffusers==0.33.1
+transformers==4.49.0
+accelerate==1.6.0
+safetensors==0.5.2
+torch==2.7.1
+xformers==0.0.29.post3
+bitsandbytes==0.45.5
+pillow==11.1.0
+numpy==1.26.4

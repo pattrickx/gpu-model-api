@@ -1,0 +1,37 @@
+services:
+  gpu-model-api:
+    # Imagem pre-build no GitHub Container Registry (build via GitHub Actions).
+    # NAO usar 'build: .' em stack Git no Portainer (falha com erro de docker context).
+    image: ghcr.io/pattrickx/gpu-model-api:latest
+    container_name: gpu-model-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - HF_HOME=/models
+      - HF_TOKEN=${HF_TOKEN:-}
+      - MODEL_A_REPO=black-forest-labs/FLUX.1-schnell
+      - MODEL_B_REPO=stabilityai/stable-diffusion-xl-base-1.0
+      - DEFAULT_NUM_STEPS=4
+      - DEFAULT_SEED=42
+      - TORCH_DTYPE=bfloat16
+      - OUTPUT_DIR=/app/output
+    volumes:
+      # Cache dos pesos do HuggingFace (sobrevive a redeploys)
+      - models_cache:/models
+      # Imagens geradas (opcional: montar para acessar os PNGs)
+      - generated:/app/output
+    # GPU passthrough (requer NVIDIA Container Toolkit + spec CDI no host)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # shm grande ajuda no decode de imagens grandes
+    shm_size: "8gb"
+
+volumes:
+  models_cache:
+  generated:
