@@ -9,6 +9,7 @@ accelerate==1.6.0
 safetensors==0.5.2
 bitsandbytes==0.45.5
 protobuf==5.29.3
+sentencepiece==0.2.0
 pillow==11.1.0
 numpy==1.26.4
 # xformers removido: exige torch==2.6.0 e conflita com torch==2.7.1; nao e essencial
