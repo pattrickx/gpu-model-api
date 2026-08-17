@@ -7,15 +7,20 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 Orientation = Literal["w", "t"]  # w = wide (16:9), t = vertical (9:16)
+ModelId = Literal["flux", "model2"]  # flux = FLUX.1-schnell, model2 = SDXL base
 
 
 class GenerateRequest(BaseModel):
     """Request to generate one image from a prompt.
 
-    Exactly one model is selected via the path (``/generate/flux`` or
-    ``/generate/model2``); the body only carries the prompt and options.
+    The model is chosen via the ``model`` field ("flux" or "model2").
+    The endpoint returns the generated image file directly.
     """
 
+    model: ModelId = Field(
+        "flux",
+        description="Modelo a usar: 'flux' (FLUX.1-schnell) ou 'model2' (SDXL base 1.0).",
+    )
     prompt: str = Field(
         ...,
         min_length=1,
