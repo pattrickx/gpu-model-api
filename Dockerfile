@@ -1,6 +1,6 @@
 # Imagem base CUDA com Python 3.12 + pip + torch + CUDA ja prontos.
 # Evita apt-get (que falha na rede de alguns builders) e garante GPU.
-FROM pytorch/pytorch:2.7.1-cuda12.4-cudnn9-runtime
+FROM pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

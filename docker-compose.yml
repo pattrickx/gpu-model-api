@@ -1,10 +1,13 @@
 services:
   gpu-model-api:
-    # Imagem pre-build no GitHub Container Registry (build via GitHub Actions).
-    # NAO usar 'build: .' em stack Git no Portainer (falha com erro de docker context).
+    # Imagem pre-build no GitHub Container Registry (build via GitHub Actions
+    # ou via docker run+commit no host). NUNCA use 'build: .' em stack Git no
+    # Portainer (falha por falta de docker context).
     image: ghcr.io/pattrickx/gpu-model-api:latest
     container_name: gpu-model-api
     restart: unless-stopped
+    # Sobrescreve o entrypoint da imagem base (que e bash) para rodar a API.
+    command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
     environment:
