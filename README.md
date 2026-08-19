@@ -1,12 +1,17 @@
 # GPU Model API
 
-API FastAPI para **geração de imagens com GPU** usando modelos de difusão
-(FLUX.1-schnell e um modelo secundário SDXL), com **1 request por vez** para
-não sobrecarregar a GPU.
+API FastAPI para **geração de imagens, áudio (TTS) e transcrição de áudio (ASR)**
+com GPU, com **1 request por vez** para não sobrecarregar a GPU.
+
+Endpoints separados por tipo de mídia:
+
+- `/generate-image` — imagem (FLUX.1-schnell, SDXL)
+- `/generate-audio` — TTS (Kokoro-82M, Qwen3-TTS)
+- `/transcribe-audio` — ASR (Whisper, CrisperWhisper, Parakeet, Qwen3-ASR)
 
 > Testado em: NVIDIA RTX 3060 12GB, host TrueNAS, deploy via `docker compose`.
 
-### Limitacoes conhecidas (RTX 3060 12GB)
+### Limitações conhecidas (RTX 3060 12GB)
 - **FLUX.1-schnell** roda nesta 12GB usando a receita da GTX 1650 4GB:
   `torch_dtype=bfloat16` (sem quantizacao) + `enable_sequential_cpu_offload()`
   + `enable_vae_tiling()`. O texto (T5) roda em CPU, entao cada geracao demora
@@ -15,7 +20,9 @@ não sobrecarregar a GPU.
   `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`), e e mais rapido.
 - **FLUX exige `HF_TOKEN`** valido (repo e *gated*).
 - A imagem precisa de **`gcc` + `python3-dev`** (o `bitsandbytes`/`triton`
-  compila dentro do container). Veja "Build da imagem" abaixo.
+  compila dentro do container). Veja "Deploy via Docker" abaixo.
+- O **ASR transcreve sempre na língua original** do áudio: o parâmetro
+  `language` é ignorado de propósito (o modelo detecta o idioma sozinho).
 
 ---
 
@@ -27,19 +34,25 @@ Endpoints:
 |---|---|---|
 | GET | `/health` | status + modelos carregados |
 | GET | `/models` | ids e repos dos modelos |
-| POST | `/generate` | gera imagem e **retorna o PNG direto** |
+| GET | `/docs` | Swagger UI interativo |
+| POST | `/generate-image` | gera imagem, retorna PNG |
+| POST | `/generate-audio` | gera áudio (TTS), retorna WAV |
+| POST | `/transcribe-audio` | transcreve áudio, retorna JSON |
 
-O body do `/generate` escolhe o modelo:
+Cada endpoint escolhe o modelo via campo `model`. Os campos por tipo:
 
-| Campo `model` | Modelo |
-|---|---|
-| `"flux"` | `FLUX.1-schnell` (Apache-2.0, few-step) |
-| `"model2"` | `stable-diffusion-xl-base-1.0` (fp16) |
+- **Imagem** (`/generate-image`): `model` (`flux`|`model2`), `prompt`,
+  `orientation` (`w`=wide 16:9 1024x576, `t`=vertical 9:16 576x1024),
+  `num_inference_steps`, `seed`.
+- **Áudio/TTS** (`/generate-audio`): `model` (`kokoro`|`qwen3tts`), `text`,
+  `voice`, `language`.
+- **ASR** (`/transcribe-audio`): `file` (multipart WAV), `model`
+  (whisper_turbo|crisper2|parakeet|qwen3asr_06b|qwen3asr_17b). O `language`
+  é **ignorado** (detecção automática).
 
-Cada request recebe um **prompt**, o **model** (`flux`|`model2`), a
-**orientação** (`w` = wide 16:9 1024x576, `t` = vertical 9:16 576x1024), a
-**quantidade de interações** (`num_inference_steps`, os "loops") e a `seed`.
-O endpoint retorna a imagem PNG diretamente (FileResponse).
+O `/generate-image` e `/generate-audio` retornam o arquivo direto
+(FileResponse). O `/transcribe-audio` retorna
+`{"model": "...", "transcription": "{...json com text + chunks/language...}"}`.
 
 ### Concorrência (regra de ouro)
 A GPU é serial por natureza. **Todas as gerações passam por um executor de 1
@@ -59,7 +72,7 @@ gpu-model-api/
 │   ├── schemas.py       # Pydantic (request/response)
 │   ├── pipelines.py     # carga lazy + lock serializado (1 req/vez)
 │   └── main.py          # FastAPI (endpoints)
-├── docker-compose.yml   # stack Portainer (GPU passthrough)
+├── docker-compose.yml   # compose local (GPU passthrough), bind mount RO
 ├── Dockerfile           # base nvidia/cuda:12.4, Python 3.12
 ├── requirements.txt
 ├── .env.example
@@ -80,7 +93,11 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ---
 
-## Deploy via Docker / Portainer
+## Deploy via Docker (compose + bind mount read-only)
+
+O deploy usa **`docker compose`** (não stack Portainer) com **bind mount
+read-only** do código e **1 executor serial**. O container tem `restart:
+unless-stopped`, então sobrevive a reboot.
 
 ### 1. Build da imagem (GHCR)
 A imagem `ghcr.io/pattrickx/gpu-model-api:latest` ja esta publicada. Para
@@ -101,28 +118,25 @@ printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u pattrickx --password-stdin
 docker push ghcr.io/pattrickx/gpu-model-api:latest
 ```
 
-(Opcional) o workflow `.github/workflows/build.yml` também builda no push,
-mas pode falhar por espaco/rede no runner — o metodo acima e o caminho
-garantido.
-
 ### 2. Pré-requisitos no host (TrueNAS / Linux GPU)
 - NVIDIA Container Toolkit instalado.
 - Spec CDI habilitada: `sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml`
 - Docker capaz de usar `--gpus all`.
 
-### 3. Portainer — adicionar Stack por repositório Git
-1. Portainer → **Stacks → Add stack**.
-2. **Build method:** `Repository`.
-3. **Repository URL:** `https://github.com/pattrickx/gpu-model-api`
-4. **Compose path:** `docker-compose.yml`
-5. (Opcional) **Environmental variables:** `HF_TOKEN` se usar modelo gated.
-6. **Deploy the stack.**
+### 3. Subir a stack (compose)
+O `docker-compose.yml` faz bind mount **read-only** do código
+(`/root/build/gpu-model-api/app:/app/app:ro`) e instala as libs extras no
+`command` (python-multipart, imageio-ffmpeg, kokoro, soundfile, qwen-asr,
+torchaudio). Para subir:
 
-> ⚠️ Em stack Git, **não use `build: .`** (Portainer não tem docker context e
-> falha com erro de build). Por isso a imagem é pré-buildada no GHCR.
+```bash
+cd /root/gpu-model-api-deploy
+docker compose up -d
+```
 
 O container sobe na porta `8000` e faz GPU passthrough (`deploy.resources`
-+ `gpus: all` via compose v2.4+ / Portainer).
++ `gpus: all`). Edições no código exigem `docker compose restart` (uvicorn
+sem `--reload`).
 
 ---
 
@@ -131,27 +145,34 @@ O container sobe na porta `8000` e faz GPU passthrough (`deploy.resources`
 ### Health check
 ```bash
 curl http://SEU_HOST:8000/health
-# {"status":"ok","models_loaded":{"flux":false,"model2":false}}
+# {"status":"ok","models_loaded":{"flux":false,"model2":false,...}}
 ```
 
-### Gerar imagem FLUX.1-schnell wide (horizontal), 4 loops
+### Listar modelos
 ```bash
-curl -X POST http://SEU_HOST:8000/generate \
+curl http://SEU_HOST:8000/models
+# {"flux":{"repo":"...","task":"image"}, ...}
+```
+
+---
+
+### Imagem — FLUX.1-schnell wide (horizontal), 4 loops
+```bash
+curl -X POST http://SEU_HOST:8000/generate-image \
   -H "Content-Type: application/json" \
-  -d '{"model":"flux","prompt":"um lago sereno ao por do sol, luz volumetrica","orientation":"w","num_inference_steps":4}'
-# retorna o PNG direto (salve com -o saida.png)
+  -d '{"model":"flux","prompt":"um lago sereno ao por do sol, luz volumetrica","orientation":"w","num_inference_steps":4}' -o flux_wide.png
 ```
 
-### Gerar imagem FLUX.1-schnell vertical, 4 loops
+### Imagem — FLUX.1-schnell vertical, 4 loops
 ```bash
-curl -X POST http://SEU_HOST:8000/generate \
+curl -X POST http://SEU_HOST:8000/generate-image \
   -H "Content-Type: application/json" \
   -d '{"model":"flux","prompt":"um lago sereno ao por do sol, luz volumetrica","orientation":"t","num_inference_steps":4}' -o flux_vertical.png
 ```
 
-### Gerar imagem SDXL (model2) wide, 4 loops
+### Imagem — SDXL (model2) wide, 4 loops
 ```bash
-curl -X POST http://SEU_HOST:8000/generate \
+curl -X POST http://SEU_HOST:8000/generate-image \
   -H "Content-Type: application/json" \
   -d '{"model":"model2","prompt":"viajante solitario num penhasco ao amanhecer","orientation":"w","num_inference_steps":4}' -o sdxl_wide.png
 ```
@@ -159,10 +180,86 @@ curl -X POST http://SEU_HOST:8000/generate \
 > FLUX na 12GB usa `sequential_cpu_offload` (texto em CPU) → cada geracao
 > leva ~5-8 min. SDXL e mais rapido. A API serializa 1 request por vez.
 
-### Baixar a imagem gerada (pelo filename, sem GPU)
+### Áudio/TTS — Kokoro-82M (texto -> WAV, PT-BR)
 ```bash
-curl http://SEU_HOST:8000/image/<filename> -o saida.png
+curl -X POST http://SEU_HOST:8000/generate-audio \
+  -H "Content-Type: application/json" \
+  -d '{"model":"kokoro","text":"Olá, este é um teste de voz em português.","voice":"af_heart"}' -o kokoro.wav
 ```
+
+### Áudio/TTS — Qwen3-TTS (vozes nomeadas EN/PT)
+```bash
+curl -X POST http://SEU_HOST:8000/generate-audio \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen3tts","text":"She said she would be here by noon.","voice":"Ryan","language":"English"}' -o qwen_ryan.wav
+```
+
+### ASR — Whisper-large-v3-turbo (língua original, word-level)
+```bash
+curl -X POST http://SEU_HOST:8000/transcribe-audio \
+  -F "file=@audio.wav" -F "model=whisper_turbo"
+# retorna {"model":"whisper_turbo","transcription":"{...json com text + chunks...}"}
+```
+
+### ASR — CrisperWhisper2.0_large (timestamps precisos de palavra)
+```bash
+curl -X POST http://SEU_HOST:8000/transcribe-audio \
+  -F "file=@audio.wav" -F "model=crisper2"
+# retorna JSON com text + chunks (word timestamps)
+```
+
+### ASR — Parakeet TDT 0.6B V3 (inglês, word/char/segment nativos)
+```bash
+curl -X POST http://SEU_HOST:8000/transcribe-audio \
+  -F "file=@audio.wav" -F "model=parakeet"
+# transcreve em ingles (monolingue); timestamps nativos do TDT
+```
+
+### ASR — Qwen3-ASR-0.6B (multilíngue, word timestamps via ForcedAligner)
+```bash
+curl -X POST http://SEU_HOST:8000/transcribe-audio \
+  -F "file=@audio.wav" -F "model=qwen3asr_06b"
+# detecta idioma automaticamente; chunks com start_time/end_time por palavra
+```
+
+### ASR — Qwen3-ASR-1.7B (multilíngue, word timestamps via ForcedAligner)
+```bash
+curl -X POST http://SEU_HOST:8000/transcribe-audio \
+  -F "file=@audio.wav" -F "model=qwen3asr_17b"
+# detecta idioma automaticamente (inclui pt); chunks com start_time/end_time
+```
+
+> Todos os ASR acima transcrevem na **língua original** do áudio (o parâmetro
+> `language` é ignorado de propósito). Use `jq` para inspecionar o JSON:
+> `curl -s ... | jq -r '.transcription' | jq`.
+
+### Baixar o arquivo gerado (pelo filename, sem GPU)
+```bash
+curl http://SEU_HOST:8000/file/<filename> -o saida.ext
+```
+
+---
+
+## Modelos disponíveis
+
+| `model` | Tipo | Repo | Saída |
+|---|---|---|---|
+| `flux` | imagem | `MODEL_A_REPO` (FLUX.1-schnell) | PNG |
+| `model2` | imagem | `MODEL_B_REPO` (SDXL base 1.0) | PNG |
+| `kokoro` | TTS | `MODEL_C_REPO` (hexgrad/Kokoro-82M) | WAV |
+| `qwen3tts` | TTS | `MODEL_D_REPO` (Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) | WAV |
+| `whisper_turbo` | ASR | `MODEL_E_REPO` (openai/whisper-large-v3-turbo) | JSON |
+| `crisper2` | ASR | `MODEL_F_REPO` (nyralabs/CrisperWhisper2.0_large) | JSON |
+| `parakeet` | ASR | `MODEL_G_REPO` (nvidia/parakeet-tdt-0.6b-v3) | JSON |
+| `qwen3asr_06b` | ASR | `MODEL_H_REPO` (Qwen/Qwen3-ASR-0.6B) + ForcedAligner | JSON |
+| `qwen3asr_17b` | ASR | `MODEL_I_REPO` (Qwen/Qwen3-ASR-1.7B) + ForcedAligner | JSON |
+
+Todos os modelos são carregados **lazy** no primeiro request e permanecem na
+GPU; a concorrência é serializada (1 request por vez) para não sobrecarregar.
+
+> `nyralabs/CrisperWhisper` (repo menor) **não** foi integrado: exige
+> `tokenizers>=0.21,<0.22` (conflito com a versão instalada). Use `crisper2`
+> (CrisperWhisper2.0_large), que funciona.
 
 ---
 
@@ -172,12 +269,19 @@ curl http://SEU_HOST:8000/image/<filename> -o saida.png
 |---|---|---|
 | `HF_TOKEN` | — | Token HF (só p/ modelos gated) |
 | `HF_HOME` | `/models` | Cache dos pesos (volume) |
-| `MODEL_A_REPO` | `black-forest-labs/FLUX.1-schnell` | Modelo A |
-| `MODEL_B_REPO` | `stabilityai/stable-diffusion-xl-base-1.0` | Modelo B |
+| `MODEL_A_REPO` | `black-forest-labs/FLUX.1-schnell` | Imagem A |
+| `MODEL_B_REPO` | `stabilityai/stable-diffusion-xl-base-1.0` | Imagem B |
+| `MODEL_C_REPO` | `hexgrad/Kokoro-82M` | TTS Kokoro |
+| `MODEL_D_REPO` | `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` | TTS Qwen3 |
+| `MODEL_E_REPO` | `openai/whisper-large-v3-turbo` | ASR Whisper |
+| `MODEL_F_REPO` | `nyralabs/CrisperWhisper2.0_large` | ASR CrisperWhisper |
+| `MODEL_G_REPO` | `nvidia/parakeet-tdt-0.6b-v3` | ASR Parakeet |
+| `MODEL_H_REPO` | `Qwen/Qwen3-ASR-0.6B` | ASR Qwen3-ASR-0.6B |
+| `MODEL_I_REPO` | `Qwen/Qwen3-ASR-1.7B` | ASR Qwen3-ASR-1.7B |
 | `DEFAULT_NUM_STEPS` | `4` | Loops padrão |
 | `DEFAULT_SEED` | `42` | Seed padrão |
 | `TORCH_DTYPE` | `bfloat16` | Precisão de carga |
-| `OUTPUT_DIR` | `/app/output` | Onde salvar PNGs |
+| `OUTPUT_DIR` | `/app/output` | Onde salvar arquivos |
 
 ---
 
@@ -187,3 +291,5 @@ curl http://SEU_HOST:8000/image/<filename> -o saida.png
   4-bit + VAE bf16, que cabe. Se quiser FLUX.1-dev, use GPU com ≥24GB.
 - Modelos são carregados **lazy** no primeiro request de cada modelo (pode levar
   minutos no primeiro uso enquanto baixa os pesos).
+- Os ASR **Qwen3-ASR** carregam junto o `Qwen3-ForcedAligner-0.6B` para word
+  timestamps; isso ocupa VRAM extra (~1-3GB) enquanto ativos.

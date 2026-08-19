@@ -29,6 +29,42 @@ MODEL_A_REPO: str = os.environ.get(
 MODEL_B_REPO: str = os.environ.get(
     "MODEL_B_REPO", "stabilityai/stable-diffusion-xl-base-1.0"
 )
+# TTS model: Kokoro-82M (82M params, leve e rapido, voz natural).
+MODEL_C_REPO: str = os.environ.get("MODEL_C_REPO", "hexgrad/Kokoro-82M")
+# TTS model: Qwen3-TTS-1.7B-CustomVoice (multilíngue, vozes nomeadas).
+MODEL_D_REPO: str = os.environ.get(
+    "MODEL_D_REPO", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+)
+# ASR model: Whisper-large-v3-turbo (word-level timestamps, ~4x mais rapido).
+MODEL_E_REPO: str = os.environ.get(
+    "MODEL_E_REPO", "openai/whisper-large-v3-turbo"
+)
+
+# Tipo de mídia de saída por modelo (seguindo o padrão de 1 executor serializado).
+# image -> PNG, tts -> WAV, asr -> JSON (transcrição).
+MEDIA_TYPE: dict[str, str] = {
+    "flux": "image/png",
+    "model2": "image/png",
+    "kokoro": "audio/wav",
+    "qwen3tts": "audio/wav",
+    "whisper_turbo": "application/json",
+}
+# Extensão de arquivo de saída por modelo.
+MEDIA_EXT: dict[str, str] = {
+    "flux": "png",
+    "model2": "png",
+    "kokoro": "wav",
+    "qwen3tts": "wav",
+    "whisper_turbo": "json",
+}
+# Task (tipo de geração) por modelo.
+MODEL_TASK: dict[str, str] = {
+    "flux": "image",
+    "model2": "image",
+    "kokoro": "tts",
+    "qwen3tts": "tts",
+    "whisper_turbo": "asr",
+}
 
 # ---- Generation defaults ----
 DEFAULT_NUM_STEPS: int = int(os.environ.get("DEFAULT_NUM_STEPS", "4"))
@@ -72,6 +108,7 @@ def resolve_resolution(orientation: str) -> tuple[int, int]:
     return RESOLUTIONS[orientation]
 
 
-def output_path(model: str, width: int, height: int, seed: int) -> Path:
+def output_path(model: str, width: int, height: int, seed: int, ext: str | None = None) -> Path:
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
-    return Path(OUTPUT_DIR) / f"{model}_{width}x{height}_seed{seed}.png"
+    ext = ext or MEDIA_EXT.get(model, "png")
+    return Path(OUTPUT_DIR) / f"{model}_{width}x{height}_seed{seed}.{ext}"
