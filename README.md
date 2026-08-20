@@ -6,7 +6,7 @@ com GPU, com **1 request por vez** para não sobrecarregar a GPU.
 Endpoints separados por tipo de mídia:
 
 - `/generate-image` — imagem (FLUX.1-schnell, SDXL)
-- `/generate-audio` — TTS (Kokoro-82M, Qwen3-TTS, Chatterbox)
+- `/generate-audio` — TTS (Kokoro-82M, Qwen3-TTS, Chatterbox, F5-TTS*)
 - `/transcribe-audio` — ASR (Whisper, CrisperWhisper, Parakeet, Qwen3-ASR)
 
 > Testado em: NVIDIA RTX 3060 12GB, host TrueNAS, deploy via `docker compose`.
@@ -51,8 +51,10 @@ Cada endpoint escolhe o modelo via campo `model`. Os campos por tipo:
   (prompt de edição), `orientation`, `num_inference_steps`, `seed`. O
   FLUX.2-klein unifica T2I e I2I: a imagem de entrada é passada como
   condição (sem `strength` — edição in-painting-style).
-- **Áudio/TTS** (`/generate-audio`): `model` (`kokoro`|`qwen3tts`|`chatterbox`), `text`,
-  `voice`, `language`, `exaggeration` (chatterbox), `cfg_weight` (chatterbox).
+- **Áudio/TTS** (`/generate-audio`): `model` (`kokoro`|`qwen3tts`|`chatterbox`|`f5tts`), `text`,
+  `voice`, `language`, `exaggeration` (chatterbox), `cfg_weight` (chatterbox),
+  `ref_audio` (f5tts), `ref_text` (f5tts). O f5tts é **CC-BY-NC** (não comercial)
+  e English-only (voice cloning via áudio de referência).
 - **ASR** (`/transcribe-audio`): `file` (multipart WAV), `model`
   (whisper_turbo|crisper2|parakeet|qwen3asr_06b|qwen3asr_17b). O `language`
   é **ignorado** (detecção automática).
@@ -247,6 +249,16 @@ curl -X POST http://SEU_HOST:8000/generate-audio \
 > (0.0–1.0, default 0.5) controla aderência ao texto. Modelo 0.5B, ~24–53s
 > por áudio na 3060 12GB. RoDA em PT-BR (testado).
 
+### Áudio/TTS — F5-TTS (SWivid, Flow Matching, **CC-BY-NC**, English-only)
+```bash
+curl -X POST http://SEU_HOST:8000/generate-audio \
+  -H "Content-Type: application/json" \
+  -d '{"model":"f5tts","text":"The quick brown fox jumps over the lazy dog.","ref_text":"This is a reference voice sample used for voice cloning."}' -o f5tts.wav
+```
+> `ref_audio` (caminho no container, default `/app/ref_audio_en.wav`) e `ref_text`
+> definem a voz clonada. English-only. Licença **CC-BY-NC-4.0 (não comercial)** —
+> integrado para prova de conceito. RoDA em ~9s/áudio (24kHz).
+
 ### ASR — Whisper-large-v3-turbo (língua original, word-level)
 ```bash
 curl -X POST http://SEU_HOST:8000/transcribe-audio \
@@ -302,6 +314,7 @@ curl http://SEU_HOST:8000/file/<filename> -o saida.ext
 | `kokoro` | TTS | `MODEL_C_REPO` (hexgrad/Kokoro-82M) | WAV |
 | `qwen3tts` | TTS | `MODEL_D_REPO` (Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) | WAV |
 | `chatterbox` | TTS | `MODEL_P_REPO` (ResembleAI/chatterbox) | WAV |
+| `f5tts` | TTS | `MODEL_Q_REPO` (SWivid/F5-TTS, **CC-BY-NC**) | WAV |
 | `whisper_turbo` | ASR | `MODEL_E_REPO` (openai/whisper-large-v3-turbo) | JSON |
 | `crisper2` | ASR | `MODEL_F_REPO` (nyralabs/CrisperWhisper2.0_large) | JSON |
 | `parakeet` | ASR | `MODEL_G_REPO` (nvidia/parakeet-tdt-0.6b-v3) | JSON |

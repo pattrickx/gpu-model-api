@@ -138,6 +138,18 @@ def _load_chatterbox() -> Any:
     return ChatterboxTTS.from_pretrained(device="cuda")
 
 
+def _load_f5tts() -> Any:
+    """Load SWivid/F5-TTS (Flow Matching, voice cloning via ref_audio).
+
+    LICENCA: CC-BY-NC-4.0 (NAO COMERCIAL). Testado isolado (ok), mas o
+    modelo exige audio de referencia (voice cloning) e e' English-only.
+    Mantido na API para prova de conceito, documentado como NC.
+    """
+    from f5_tts.api import F5TTS
+
+    return F5TTS(model="F5TTS_v1_Base", device="cuda")
+
+
 def _load_whisper_turbo() -> Any:
     """Load Whisper-large-v3-turbo ASR (word-level timestamps)."""
     from transformers import pipeline as hf_pipeline
@@ -456,6 +468,7 @@ _LOADERS = {
     "flux2_klein_fp8": _load_flux2_klein_fp8,
     "flux2_klein_base": _load_flux2_klein_base,
     "chatterbox": _load_chatterbox,
+    "f5tts": _load_f5tts,
 }
 _REPOS = {
     "flux": cfg.MODEL_A_REPO,
@@ -474,6 +487,7 @@ _REPOS = {
     "flux2_klein_fp8": cfg.MODEL_N_REPO,
     "flux2_klein_base": cfg.MODEL_O_REPO,
     "chatterbox": cfg.MODEL_P_REPO,
+    "f5tts": cfg.MODEL_Q_REPO,
 }
 
 
@@ -630,6 +644,8 @@ def _run_tts_job(
     seed: int,
     exaggeration: float | None = None,
     cfg_weight: float | None = None,
+    ref_audio: str | None = None,
+    ref_text: str | None = None,
 ) -> Path:
     """Synchronous TTS job (text -> WAV). Runs inside the 1-worker executor.
 
@@ -679,6 +695,25 @@ def _run_tts_job(
                 wav = wav.cpu().numpy()
             audio = wav.squeeze()
             sr = pipe.sr
+            ext = "wav"
+        elif model == "f5tts":
+            # F5-TTS: Flow Matching, voice cloning OBRIGATORIO via ref_audio.
+            # LICENCA CC-BY-NC (nao comercial). English-only. Se ref_audio
+            # nao for passado, usa o WAV de referencia padrao do container.
+            ref_file = ref_audio or "/app/ref_audio_en.wav"
+            ref_text = ref_text or (
+                "This is a reference voice sample used for voice cloning."
+            )
+            out = pipe.infer(
+                ref_file=ref_file,
+                ref_text=ref_text,
+                gen_text=text,
+                seed=seed,
+                remove_silence=True,
+            )
+            # f5_tts.api.F5TTS.infer retorna (wav, sr, spec)
+            audio, sr, _ = out
+            audio = audio.squeeze()
             ext = "wav"
         else:
             raise ValueError(f"Modelo TTS desconhecido: {model}")
@@ -882,10 +917,12 @@ async def generate_audio(
     seed: int | None = None,
     exaggeration: float | None = None,
     cfg_weight: float | None = None,
+    ref_audio: str | None = None,
+    ref_text: str | None = None,
 ) -> dict[str, Any]:
     """Schedule a TTS (audio) generation. Blocks until the GPU is free.
 
-    tts (kokoro, qwen3tts, chatterbox) -> _run_tts_job (WAV).
+    tts (kokoro, qwen3tts, chatterbox, f5tts) -> _run_tts_job (WAV).
     """
     used_seed = cfg.DEFAULT_SEED if seed is None else seed
     repo = _REPOS[model]
@@ -902,6 +939,8 @@ async def generate_audio(
         used_seed,
         exaggeration,
         cfg_weight,
+        ref_audio,
+        ref_text,
     )
     _unload_all()  # libera VRAM apos o job (diretriz de economia de recursos)
     return {

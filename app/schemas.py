@@ -26,7 +26,7 @@ ImageEditModelId = Literal[
     "flux2_klein_fp8",
     "flux2_klein_base",
 ]
-AudioModelId = Literal["kokoro", "qwen3tts", "chatterbox"]
+AudioModelId = Literal["kokoro", "qwen3tts", "chatterbox", "f5tts"]
 
 
 class ImageRequest(BaseModel):
@@ -66,11 +66,11 @@ class ImageRequest(BaseModel):
 
 
 class AudioRequest(BaseModel):
-    """Requisicao de sintese de AUDIO/TTS (kokoro, qwen3tts, chatterbox) -> WAV."""
+    """Requisicao de sintese de AUDIO/TTS (kokoro, qwen3tts, chatterbox, f5tts) -> WAV."""
 
     model: AudioModelId = Field(
         "kokoro",
-        description="Modelo TTS: 'kokoro' (Kokoro-82M), 'qwen3tts' (Qwen3-TTS) ou 'chatterbox' (ResembleAI, 23+ linguas).",
+        description="Modelo TTS: 'kokoro' (Kokoro-82M), 'qwen3tts' (Qwen3-TTS), 'chatterbox' (ResembleAI, 23+ linguas) ou 'f5tts' (F5-TTS, NC, English-only).",
     )
     text: str = Field(
         ...,
@@ -80,11 +80,11 @@ class AudioRequest(BaseModel):
     )
     voice: str | None = Field(
         None,
-        description="Voz/estilo (TTS). kokoro: 'af_heart' etc; qwen3tts: 'Ryan'/'Aiden'; chatterbox: ignorado.",
+        description="Voz/estilo (TTS). kokoro: 'af_heart' etc; qwen3tts: 'Ryan'/'Aiden'; chatterbox: ignorado; f5tts: ignorado.",
     )
     language: str | None = Field(
         None,
-        description="Idioma do TTS (qwen3tts: 'English'/'Portuguese'; kokoro detecta; chatterbox: idioma do texto).",
+        description="Idioma do TTS (qwen3tts: 'English'/'Portuguese'; kokoro detecta; chatterbox: idioma do texto; f5tts: ignorado).",
     )
     exaggeration: float | None = Field(
         None,
@@ -93,6 +93,14 @@ class AudioRequest(BaseModel):
     cfg_weight: float | None = Field(
         None,
         description="Chatterbox: CFG weight (0.0-1.0, default 0.5).",
+    )
+    ref_audio: str | None = Field(
+        None,
+        description="F5-TTS: caminho no container do audio de referencia para voice cloning (default /app/ref_audio_en.wav).",
+    )
+    ref_text: str | None = Field(
+        None,
+        description="F5-TTS: transcricao do audio de referencia (default texto padrao).",
     )
 
     model_config = {"extra": "ignore"}

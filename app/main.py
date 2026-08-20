@@ -131,7 +131,7 @@ async def generate_image_edit(
 
 @app.post("/generate-audio", response_model=AudioResponse)
 async def generate_audio(req: AudioRequest = Body(...)) -> FileResponse:
-    """Sintetiza AUDIO/TTS (kokoro, qwen3tts, chatterbox) a partir de texto -> WAV."""
+    """Sintetiza AUDIO/TTS (kokoro, qwen3tts, chatterbox, f5tts) a partir de texto -> WAV."""
     logger.info("generate-audio %s", req.model)
     result = await pipelines.generate_audio(
         model=req.model,
@@ -140,6 +140,8 @@ async def generate_audio(req: AudioRequest = Body(...)) -> FileResponse:
         language=req.language,
         exaggeration=req.exaggeration,
         cfg_weight=req.cfg_weight,
+        ref_audio=req.ref_audio,
+        ref_text=req.ref_text,
     )
     return FileResponse(
         result["image_path"],

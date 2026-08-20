@@ -37,6 +37,9 @@ MODEL_D_REPO: str = os.environ.get(
 )
 # TTS model: ResembleAI Chatterbox (MIT, 23+ línguas incl. PT-BR, 0.5B).
 MODEL_P_REPO: str = os.environ.get("MODEL_P_REPO", "ResembleAI/chatterbox")
+# TTS model: SWivid F5-TTS (CC-BY-NC-4.0, English-only, voice cloning).
+# Mantido para prova de conceito; exige audio de referencia (ref_file/ref_text).
+MODEL_Q_REPO: str = os.environ.get("MODEL_Q_REPO", "SWivid/F5-TTS")
 # ASR model: Whisper-large-v3-turbo (word-level timestamps, ~4x mais rapido).
 MODEL_E_REPO: str = os.environ.get(
     "MODEL_E_REPO", "openai/whisper-large-v3-turbo"
