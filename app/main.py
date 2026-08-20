@@ -102,13 +102,15 @@ async def generate_image_edit(
 ) -> FileResponse:
     """Edita IMAGEM (texto + imagem -> PNG) via FLUX.2-klein I2I.
 
-    Entrada: arquivo de imagem + prompt de edicao. Modelos suportados:
-    flux2_klein, flux2_klein_fp8, flux2_klein_base.
+    Entrada: arquivo de imagem + prompt de edicao. Modelos suportados
+    (FLUX.2-klein unifica T2I e I2I num pipeline): flux2_klein,
+    flux2_klein_fp8, flux2_klein_base.
     """
-    if model not in cfg.MODEL_TASK or cfg.MODEL_TASK.get(model) != "image_edit":
+    I2I_MODELS = {"flux2_klein", "flux2_klein_fp8", "flux2_klein_base"}
+    if model not in cfg.MODEL_TASK or model not in I2I_MODELS:
         raise HTTPException(
             status_code=400,
-            detail=f"modelo '{model}' nao e image_edit. Use flux2_klein.",
+            detail=f"modelo '{model}' nao suporta edicao. Use flux2_klein/flux2_klein_fp8/flux2_klein_base.",
         )
     logger.info("generate-image-edit %s | model=%s", image.filename, model)
     data = await image.read()
