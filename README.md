@@ -358,6 +358,28 @@ GPU; a concorrência é serializada (1 request por vez) para não sobrecarregar.
 
 ---
 
+## Lipsync — status dos modelos testados
+
+O endpoint `/generate-lipsync` usa **Wav2Lip** (único lipsync viável no stack
+atual do container: torch 2.7.1+cu126 / transformers 4.57.6 / diffusers 0.39).
+
+| Modelo | Status | Motivo se bloqueado |
+|---|---|---|
+| **Wav2Lip** | ✅ Integrado (`/generate-lipsync`) | — |
+| SadTalker | ❌ Bloqueado | basicsr importa `torchvision.transforms.functional_tensor` (removido no torchvision 0.22) |
+| LatentSync 1.6 | ❌ Bloqueado | exige transformers 4.48 ≠ 4.57 da API |
+| MuseTalk | ❌ Bloqueado | tensorflow 2.12 + transformers 4.39 + numpy 1.23 |
+| MultiTalk (Wan) | ❌ Bloqueado | exige ComfyUI/Wan separado |
+| LTX-2 / Wan (ComfyUI) | ❌ Bloqueado | exige ComfyUI separado |
+| EchoMimicV1/V2 | ❌ Bloqueado | exige torch 2.5.1 + xformers (CUDA 12.4) |
+| Hallo / Hallo2 | ❌ Bloqueado | exige torch 2.2–2.3 (CUDA 11.8/12.1) |
+| LivePortrait | ❌ Bloqueado | exige torch 2.3 (CUDA 12.1) |
+
+> Todos os lipsyncs de ponta rebaixam o torch e quebram o FLUX.2-klein.
+> Para rodá-los seria necessário um container dedicado (stack próprio).
+
+---
+
 ## Variáveis de ambiente
 
 | Var | Default | Descrição |
