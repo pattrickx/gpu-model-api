@@ -8,6 +8,7 @@ Endpoints separados por tipo de mídia:
 - `/generate-image` — imagem (FLUX.1-schnell, SDXL)
 - `/generate-audio` — TTS (Kokoro-82M, Qwen3-TTS, Chatterbox, F5-TTS*)
 - `/transcribe-audio` — ASR (Whisper, CrisperWhisper, Parakeet, Qwen3-ASR)
+- `/generate-lipsync` — Lipsync (Wav2Lip: vídeo|imagem + áudio → MP4)
 
 > Testado em: NVIDIA RTX 3060 12GB, host TrueNAS, deploy via `docker compose`.
 
@@ -38,6 +39,7 @@ Endpoints:
 | POST | `/generate-image` | gera imagem (T2I), retorna PNG |
 | POST | `/generate-image-edit` | edita imagem (texto+imagem → PNG) via FLUX.2-klein |
 | POST | `/generate-audio` | gera áudio (TTS), retorna WAV |
+| POST | `/generate-lipsync` | lipsync (Wav2Lip: vídeo|imagem + áudio → MP4) |
 | POST | `/transcribe-audio` | transcreve áudio, retorna JSON |
 
 Cada endpoint escolhe o modelo via campo `model`. Os campos por tipo:
@@ -258,6 +260,20 @@ curl -X POST http://SEU_HOST:8000/generate-audio \
 > `ref_audio` (caminho no container, default `/app/ref_audio_en.wav`) e `ref_text`
 > definem a voz clonada. English-only. Licença **CC-BY-NC-4.0 (não comercial)** —
 > integrado para prova de conceito. RoDA em ~9s/áudio (24kHz).
+
+### Lipsync — Wav2Lip (vídeo|imagem + áudio → MP4)
+```bash
+# Modo vídeo:
+curl -X POST http://SEU_HOST:8000/generate-lipsync \
+  -F "face=@video.mp4" -F "audio=@audio.wav" -o lipsync.mp4
+# Modo imagem (foto → vídeo sincronizado):
+curl -X POST http://SEU_HOST:8000/generate-lipsync \
+  -F "face=@foto.jpg" -F "audio=@audio.wav" -o lipsync.mp4
+```
+> `face` = vídeo (.mp4) OU imagem (.jpg/.png); `audio` = WAV. O vídeo de saída
+> assume a duração do áudio (Wav2Lip estica repetindo frames quando áudio > vídeo).
+> `pads` (`"0 20 0 0"`) ajusta o crop do rosto. Checkpoint Wav2Lip-GAN (435MB)
+> baixado via `setup_wav2lip.sh` no startup do container.
 
 ### ASR — Whisper-large-v3-turbo (língua original, word-level)
 ```bash

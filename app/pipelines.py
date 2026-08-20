@@ -956,6 +956,79 @@ async def generate_audio(
     }
 
 
+def _run_lipsync_job(
+    face_path: str,
+    audio_path: str,
+    out_path: str,
+    pads: str = "0 20 0 0",
+    resize_factor: int = 1,
+) -> dict[str, Any]:
+    """Synchronous Wav2Lip lipsync job (video|image + audio -> MP4).
+
+    Roda o Wav2Lip em subprocesso isolado (wav2lip_worker.py) para nao
+    misturar as deps do Wav2Lip (librosa 0.9.2, face_alignment) com o
+    ambiente principal.
+    """
+    import json as _json
+    import os as _os
+    import subprocess as _subprocess
+    import sys as _sys
+
+    worker = _os.path.join(_os.path.dirname(__file__), "wav2lip_worker.py")
+    req = _json.dumps(
+        {
+            "face_path": face_path,
+            "audio_path": audio_path,
+            "out_path": out_path,
+            "pads": pads,
+            "resize_factor": resize_factor,
+        }
+    )
+    r = _subprocess.run(
+        [_sys.executable, worker, req],
+        capture_output=True,
+        text=True,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"wav2lip_worker falhou (rc={r.returncode}): {r.stderr[-800:]}")
+    meta = _json.loads(r.stdout.strip() or "{}")
+    return meta
+
+
+async def generate_lipsync(
+    face_path: str,
+    audio_path: str,
+    pads: str | None = None,
+    resize_factor: int | None = None,
+) -> dict[str, Any]:
+    """Schedule a Wav2Lip lipsync (video|image + audio -> MP4)."""
+    import os as _os
+    import time
+
+    used_pads = pads or "0 20 0 0"
+    used_rf = resize_factor or 1
+    loop = asyncio.get_event_loop()
+    out_name = f"lipsync_{int(time.time())}.mp4"
+    out_path = str(Path(cfg.OUTPUT_DIR) / out_name)
+    meta = await loop.run_in_executor(
+        _executor,
+        _run_lipsync_job,
+        face_path,
+        audio_path,
+        out_path,
+        used_pads,
+        used_rf,
+    )
+    return {
+        "model": "wav2lip",
+        "task": "lipsync",
+        "media_type": "video/mp4",
+        "image_path": meta["out_path"],
+        "filename": _os.path.basename(meta["out_path"]),
+        "size": meta.get("size"),
+    }
+
+
 async def transcribe(
     model: str,
     audio_path: Path,

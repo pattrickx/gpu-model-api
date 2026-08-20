@@ -150,6 +150,47 @@ async def generate_audio(req: AudioRequest = Body(...)) -> FileResponse:
     )
 
 
+@app.post("/generate-lipsync")
+async def generate_lipsync(
+    face: UploadFile = File(...),
+    audio: UploadFile = File(...),
+    pads: str = Form("0 20 0 0"),
+    resize_factor: int = Form(1),
+) -> FileResponse:
+    """Lipsync (Wav2Lip): face (video OU imagem) + audio -> MP4 sincronizado.
+
+    O video de saida assume a duracao do audio (Wav2Lip estica repetindo frames).
+    `face` pode ser .mp4 (video) ou .jpeg/.png (foto -> video).
+    `pads` = "top right bottom left" para ajuste de crop do rosto.
+    """
+    logger.info("generate-lipsync face=%s audio=%s", face.filename, audio.filename)
+    import tempfile
+
+    face_suffix = Path(face.filename or "face.mp4").suffix or ".mp4"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=face_suffix) as ftmp:
+        ftmp.write(await face.read())
+        face_path = Path(ftmp.name)
+    audio_suffix = Path(audio.filename or "audio.wav").suffix or ".wav"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=audio_suffix) as atmp:
+        atmp.write(await audio.read())
+        audio_path = Path(atmp.name)
+    try:
+        result = await pipelines.generate_lipsync(
+            face_path=str(face_path),
+            audio_path=str(audio_path),
+            pads=pads,
+            resize_factor=resize_factor,
+        )
+    finally:
+        face_path.unlink(missing_ok=True)
+        audio_path.unlink(missing_ok=True)
+    return FileResponse(
+        result["image_path"],
+        media_type=result["media_type"],
+        filename=result["filename"],
+    )
+
+
 @app.post("/transcribe-audio")
 async def transcribe_audio(
     file: UploadFile = File(...),
