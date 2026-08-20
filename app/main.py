@@ -19,7 +19,7 @@ import logging
 import tempfile
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, Body, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 import app.config as cfg
@@ -74,7 +74,7 @@ def _repo_for(mid: str) -> str:
 
 
 @app.post("/generate-image", response_model=ImageResponse)
-async def generate_image(req: ImageRequest) -> FileResponse:
+async def generate_image(req: ImageRequest = Body(...)) -> FileResponse:
     """Gera IMAGEM (flux, model2) a partir de um prompt -> PNG."""
     logger.info("generate-image %s", req.model)
     result = await pipelines.generate_image(
@@ -130,7 +130,7 @@ async def generate_image_edit(
 
 
 @app.post("/generate-audio", response_model=AudioResponse)
-async def generate_audio(req: AudioRequest) -> FileResponse:
+async def generate_audio(req: AudioRequest = Body(...)) -> FileResponse:
     """Sintetiza AUDIO/TTS (kokoro, qwen3tts) a partir de texto -> WAV."""
     logger.info("generate-audio %s", req.model)
     result = await pipelines.generate_audio(

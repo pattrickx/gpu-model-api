@@ -26,6 +26,7 @@ ImageEditModelId = Literal[
     "flux2_klein_fp8",
     "flux2_klein_base",
 ]
+AudioModelId = Literal["kokoro", "qwen3tts"]
 
 
 class ImageRequest(BaseModel):
@@ -123,3 +124,12 @@ class AudioResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     models_loaded: dict[str, bool]
+
+
+# Pydantic 2.13 exige rebuild explicito de modelos com from __future__
+# annotations (refs resolvidas lazy) antes de gerar o schema OpenAPI.
+ImageRequest.model_rebuild()
+AudioRequest.model_rebuild()
+ImageResponse.model_rebuild()
+AudioResponse.model_rebuild()
+HealthResponse.model_rebuild()
