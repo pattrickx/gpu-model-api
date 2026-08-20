@@ -6,7 +6,7 @@ com GPU, com **1 request por vez** para não sobrecarregar a GPU.
 Endpoints separados por tipo de mídia:
 
 - `/generate-image` — imagem (FLUX.1-schnell, SDXL)
-- `/generate-audio` — TTS (Kokoro-82M, Qwen3-TTS)
+- `/generate-audio` — TTS (Kokoro-82M, Qwen3-TTS, Chatterbox)
 - `/transcribe-audio` — ASR (Whisper, CrisperWhisper, Parakeet, Qwen3-ASR)
 
 > Testado em: NVIDIA RTX 3060 12GB, host TrueNAS, deploy via `docker compose`.
@@ -51,8 +51,8 @@ Cada endpoint escolhe o modelo via campo `model`. Os campos por tipo:
   (prompt de edição), `orientation`, `num_inference_steps`, `seed`. O
   FLUX.2-klein unifica T2I e I2I: a imagem de entrada é passada como
   condição (sem `strength` — edição in-painting-style).
-- **Áudio/TTS** (`/generate-audio`): `model` (`kokoro`|`qwen3tts`), `text`,
-  `voice`, `language`.
+- **Áudio/TTS** (`/generate-audio`): `model` (`kokoro`|`qwen3tts`|`chatterbox`), `text`,
+  `voice`, `language`, `exaggeration` (chatterbox), `cfg_weight` (chatterbox).
 - **ASR** (`/transcribe-audio`): `file` (multipart WAV), `model`
   (whisper_turbo|crisper2|parakeet|qwen3asr_06b|qwen3asr_17b). O `language`
   é **ignorado** (detecção automática).
@@ -214,6 +214,10 @@ curl -X POST http://SEU_HOST:8000/generate-image-edit \
 > edição. Modelos: `flux2_klein` (bf16), `flux2_klein_fp8` (fp8 dequantizado),
 > `flux2_klein_base` (não-destilado, use ~20 steps e guidance>0). O FLUX.2-klein
 > unifica T2I e I2I num pipeline; não use `strength` (edição in-painting-style).
+>
+> Testado: `POST /generate-image-edit` com `flux2_klein`, `flux2_klein_fp8` e
+> `flux2_klein_base` retornou PNG 1024x576 válido (edição de uma imagem base
+> gerada por T2I). Ver `test-gpu-api/results-models/image2image-*`.
 
 > FLUX na 12GB usa `sequential_cpu_offload` (texto em CPU) → cada geracao
 > leva ~5-8 min. SDXL e mais rapido. A API serializa 1 request por vez.
@@ -231,6 +235,17 @@ curl -X POST http://SEU_HOST:8000/generate-audio \
   -H "Content-Type: application/json" \
   -d '{"model":"qwen3tts","text":"She said she would be here by noon.","voice":"Ryan","language":"English"}' -o qwen_ryan.wav
 ```
+
+### Áudio/TTS — Chatterbox (ResembleAI, 23+ línguas incl. PT-BR, MIT)
+```bash
+curl -X POST http://SEU_HOST:8000/generate-audio \
+  -H "Content-Type: application/json" \
+  -d '{"model":"chatterbox","text":"Olá, este é um teste de síntese de voz em português brasileiro.","exaggeration":0.5,"cfg_weight":0.5}' -o chatterbox.wav
+```
+
+> `exaggeration` (0.25–2.0, default 0.5) controla expressividade; `cfg_weight`
+> (0.0–1.0, default 0.5) controla aderência ao texto. Modelo 0.5B, ~24–53s
+> por áudio na 3060 12GB. RoDA em PT-BR (testado).
 
 ### ASR — Whisper-large-v3-turbo (língua original, word-level)
 ```bash
@@ -286,6 +301,7 @@ curl http://SEU_HOST:8000/file/<filename> -o saida.ext
 | `model2` | imagem | `MODEL_B_REPO` (SDXL base 1.0) | PNG |
 | `kokoro` | TTS | `MODEL_C_REPO` (hexgrad/Kokoro-82M) | WAV |
 | `qwen3tts` | TTS | `MODEL_D_REPO` (Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) | WAV |
+| `chatterbox` | TTS | `MODEL_P_REPO` (ResembleAI/chatterbox) | WAV |
 | `whisper_turbo` | ASR | `MODEL_E_REPO` (openai/whisper-large-v3-turbo) | JSON |
 | `crisper2` | ASR | `MODEL_F_REPO` (nyralabs/CrisperWhisper2.0_large) | JSON |
 | `parakeet` | ASR | `MODEL_G_REPO` (nvidia/parakeet-tdt-0.6b-v3) | JSON |

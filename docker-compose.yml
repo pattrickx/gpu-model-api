@@ -4,7 +4,7 @@ services:
     container_name: gpu-model-api
     restart: unless-stopped
     working_dir: /app
-    command: ["sh","-c","pip install -q python-multipart imageio-ffmpeg kokoro soundfile qwen-asr 'diffusers>=0.39.0' && pip install -q --no-deps qwen-tts && pip install -q onnxruntime && pip install -q 'torchaudio==2.7.1+cu126' --index-url https://download.pytorch.org/whl/cu126 && ln -sf $(python3 -c 'import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())') /usr/local/bin/ffmpeg && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    command: ["sh","-c","pip install -q python-multipart imageio-ffmpeg kokoro soundfile qwen-asr 'diffusers>=0.39.0' chatterbox-tts && pip install -q --no-deps qwen-tts && pip install -q onnxruntime && pip install -q 'torchaudio==2.7.1+cu126' --index-url https://download.pytorch.org/whl/cu126 && ln -sf $(python3 -c 'import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())') /usr/local/bin/ffmpeg && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     ports:
       - "8000:8000"
     env_file:
@@ -26,6 +26,7 @@ services:
       - MODEL_M_REPO=black-forest-labs/FLUX.2-klein-4B
       - MODEL_N_REPO=black-forest-labs/FLUX.2-klein-4b-fp8
       - MODEL_O_REPO=black-forest-labs/FLUX.2-klein-base-4B
+      - MODEL_P_REPO=ResembleAI/chatterbox
       - DEFAULT_NUM_STEPS=4
       - DEFAULT_SEED=42
       - TORCH_DTYPE=bfloat16

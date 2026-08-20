@@ -35,6 +35,8 @@ MODEL_C_REPO: str = os.environ.get("MODEL_C_REPO", "hexgrad/Kokoro-82M")
 MODEL_D_REPO: str = os.environ.get(
     "MODEL_D_REPO", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
 )
+# TTS model: ResembleAI Chatterbox (MIT, 23+ línguas incl. PT-BR, 0.5B).
+MODEL_P_REPO: str = os.environ.get("MODEL_P_REPO", "ResembleAI/chatterbox")
 # ASR model: Whisper-large-v3-turbo (word-level timestamps, ~4x mais rapido).
 MODEL_E_REPO: str = os.environ.get(
     "MODEL_E_REPO", "openai/whisper-large-v3-turbo"
@@ -64,6 +66,10 @@ MODEL_L_REPO: str = os.environ.get("MODEL_L_REPO", "ByteDance/SDXL-Lightning")
 # T2I: FLUX.2-klein-4B (DiT 4B, bf16 + sequential offload; requer diffusers>=0.37).
 MODEL_M_REPO: str = os.environ.get(
     "MODEL_M_REPO", "black-forest-labs/FLUX.2-klein-4B"
+)
+# T2I: FLUX.2-klein-4b-fp8 (checkpoint fp8 solto, dequantizado para bf16 no load).
+MODEL_N_REPO: str = os.environ.get(
+    "MODEL_N_REPO", "black-forest-labs/FLUX.2-klein-4b-fp8"
 )
 # T2I: FLUX.2-klein-4B base (nao destilado; mais steps, aceita guidance>0).
 MODEL_O_REPO: str = os.environ.get(

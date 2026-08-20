@@ -127,6 +127,17 @@ def _load_qwen3tts() -> Any:
     return model
 
 
+def _load_chatterbox() -> Any:
+    """Load ResembleAI Chatterbox TTS (MIT, 23+ linguas incl. PT-BR).
+
+    Modelo 0.5B, roda em ~24s/audio na 3060 12GB. Suporta tuning de
+    exaggeration/cfg_weight. Carregado sob demanda (lazy) como os outros.
+    """
+    from chatterbox.tts import ChatterboxTTS
+
+    return ChatterboxTTS.from_pretrained(device="cuda")
+
+
 def _load_whisper_turbo() -> Any:
     """Load Whisper-large-v3-turbo ASR (word-level timestamps)."""
     from transformers import pipeline as hf_pipeline
@@ -444,6 +455,7 @@ _LOADERS = {
     "flux2_klein": _load_flux2_klein,
     "flux2_klein_fp8": _load_flux2_klein_fp8,
     "flux2_klein_base": _load_flux2_klein_base,
+    "chatterbox": _load_chatterbox,
 }
 _REPOS = {
     "flux": cfg.MODEL_A_REPO,
@@ -461,6 +473,7 @@ _REPOS = {
     "flux2_klein": cfg.MODEL_M_REPO,
     "flux2_klein_fp8": cfg.MODEL_N_REPO,
     "flux2_klein_base": cfg.MODEL_O_REPO,
+    "chatterbox": cfg.MODEL_P_REPO,
 }
 
 
@@ -615,6 +628,8 @@ def _run_tts_job(
     voice: str | None,
     language: str | None,
     seed: int,
+    exaggeration: float | None = None,
+    cfg_weight: float | None = None,
 ) -> Path:
     """Synchronous TTS job (text -> WAV). Runs inside the 1-worker executor.
 
@@ -651,6 +666,19 @@ def _run_tts_job(
             chunk = next(generator)
             audio = chunk[-1]
             sr = 24000
+            ext = "wav"
+        elif model == "chatterbox":
+            # Chatterbox TTS: gera tensor [1, T] ou [T]; SR=24000.
+            # Suporta tuning de estilo via exaggeration/cfg_weight.
+            wav = pipe.generate(
+                text,
+                exaggeration=float(exaggeration or 0.5),
+                cfg_weight=float(cfg_weight or 0.5),
+            )
+            if hasattr(wav, "cpu"):
+                wav = wav.cpu().numpy()
+            audio = wav.squeeze()
+            sr = pipe.sr
             ext = "wav"
         else:
             raise ValueError(f"Modelo TTS desconhecido: {model}")
@@ -852,10 +880,12 @@ async def generate_audio(
     voice: str | None = None,
     language: str | None = None,
     seed: int | None = None,
+    exaggeration: float | None = None,
+    cfg_weight: float | None = None,
 ) -> dict[str, Any]:
     """Schedule a TTS (audio) generation. Blocks until the GPU is free.
 
-    tts (kokoro, qwen3tts) -> _run_tts_job (WAV).
+    tts (kokoro, qwen3tts, chatterbox) -> _run_tts_job (WAV).
     """
     used_seed = cfg.DEFAULT_SEED if seed is None else seed
     repo = _REPOS[model]
@@ -870,6 +900,8 @@ async def generate_audio(
         voice,
         language,
         used_seed,
+        exaggeration,
+        cfg_weight,
     )
     _unload_all()  # libera VRAM apos o job (diretriz de economia de recursos)
     return {

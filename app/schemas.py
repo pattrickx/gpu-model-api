@@ -26,7 +26,7 @@ ImageEditModelId = Literal[
     "flux2_klein_fp8",
     "flux2_klein_base",
 ]
-AudioModelId = Literal["kokoro", "qwen3tts"]
+AudioModelId = Literal["kokoro", "qwen3tts", "chatterbox"]
 
 
 class ImageRequest(BaseModel):
@@ -66,11 +66,11 @@ class ImageRequest(BaseModel):
 
 
 class AudioRequest(BaseModel):
-    """Requisicao de sintese de AUDIO/TTS (kokoro, qwen3tts) -> WAV."""
+    """Requisicao de sintese de AUDIO/TTS (kokoro, qwen3tts, chatterbox) -> WAV."""
 
     model: AudioModelId = Field(
         "kokoro",
-        description="Modelo TTS: 'kokoro' (Kokoro-82M) ou 'qwen3tts' (Qwen3-TTS).",
+        description="Modelo TTS: 'kokoro' (Kokoro-82M), 'qwen3tts' (Qwen3-TTS) ou 'chatterbox' (ResembleAI, 23+ linguas).",
     )
     text: str = Field(
         ...,
@@ -80,11 +80,19 @@ class AudioRequest(BaseModel):
     )
     voice: str | None = Field(
         None,
-        description="Voz/estilo (TTS). kokoro: 'af_heart' etc; qwen3tts: 'Ryan'/'Aiden'.",
+        description="Voz/estilo (TTS). kokoro: 'af_heart' etc; qwen3tts: 'Ryan'/'Aiden'; chatterbox: ignorado.",
     )
     language: str | None = Field(
         None,
-        description="Idioma do TTS (qwen3tts: 'English'/'Portuguese'; kokoro detecta).",
+        description="Idioma do TTS (qwen3tts: 'English'/'Portuguese'; kokoro detecta; chatterbox: idioma do texto).",
+    )
+    exaggeration: float | None = Field(
+        None,
+        description="Chatterbox: controle de expressividade (0.25-2.0, default 0.5).",
+    )
+    cfg_weight: float | None = Field(
+        None,
+        description="Chatterbox: CFG weight (0.0-1.0, default 0.5).",
     )
 
     model_config = {"extra": "ignore"}
