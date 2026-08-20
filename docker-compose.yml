@@ -1,33 +1,40 @@
 services:
   gpu-model-api:
-    # Imagem pre-build no GitHub Container Registry (build via GitHub Actions
-    # ou via docker run+commit no host). NUNCA use 'build: .' em stack Git no
-    # Portainer (falha por falta de docker context).
     image: ghcr.io/pattrickx/gpu-model-api:latest
     container_name: gpu-model-api
     restart: unless-stopped
     working_dir: /app
-    # python3 (a imagem base nvidia/cuda so tem python3, nao python)
-    command: ["python3", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["sh","-c","pip install -q python-multipart imageio-ffmpeg kokoro soundfile qwen-asr 'diffusers>=0.39.0' && pip install -q --no-deps qwen-tts && pip install -q onnxruntime && pip install -q 'torchaudio==2.7.1+cu126' --index-url https://download.pytorch.org/whl/cu126 && ln -sf $(python3 -c 'import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())') /usr/local/bin/ffmpeg && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - HF_HOME=/models
-      - HF_TOKEN=${HF_TOKEN:-}
       - MODEL_A_REPO=black-forest-labs/FLUX.1-schnell
       - MODEL_B_REPO=stabilityai/stable-diffusion-xl-base-1.0
+      - MODEL_C_REPO=hexgrad/Kokoro-82M
+      - MODEL_D_REPO=Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+      - MODEL_E_REPO=openai/whisper-large-v3-turbo
+      - MODEL_F_REPO=nyralabs/CrisperWhisper2.0_large
+      - MODEL_G_REPO=nvidia/parakeet-tdt-0.6b-v3
+      - MODEL_H_REPO=Qwen/Qwen3-ASR-0.6B
+      - MODEL_I_REPO=Qwen/Qwen3-ASR-1.7B
+      - MODEL_J_REPO=stabilityai/sdxl-turbo
+      - MODEL_K_REPO=stabilityai/sd-turbo
+      - MODEL_L_REPO=ByteDance/SDXL-Lightning
+      - MODEL_M_REPO=black-forest-labs/FLUX.2-klein-4B
+      - MODEL_N_REPO=black-forest-labs/FLUX.2-klein-4b-fp8
+      - MODEL_O_REPO=black-forest-labs/FLUX.2-klein-base-4B
       - DEFAULT_NUM_STEPS=4
       - DEFAULT_SEED=42
       - TORCH_DTYPE=bfloat16
-      # Evita fragmentacao de VRAM (SDXL vertical cabia so com isso na 12GB)
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
       - OUTPUT_DIR=/app/output
     volumes:
-      # Cache dos pesos do HuggingFace (sobrevive a redeploys)
+      - /root/build/gpu-model-api/app:/app/app:ro
       - models_cache:/models
-      # Imagens geradas (opcional: montar para acessar os PNGs)
       - generated:/app/output
-    # GPU passthrough (requer NVIDIA Container Toolkit + spec CDI no host)
     deploy:
       resources:
         reservations:
@@ -35,9 +42,7 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    # shm grande ajuda no decode de imagens grandes
     shm_size: "8gb"
-
 volumes:
   models_cache:
   generated:

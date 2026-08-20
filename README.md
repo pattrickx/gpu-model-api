@@ -35,15 +35,22 @@ Endpoints:
 | GET | `/health` | status + modelos carregados |
 | GET | `/models` | ids e repos dos modelos |
 | GET | `/docs` | Swagger UI interativo |
-| POST | `/generate-image` | gera imagem, retorna PNG |
+| POST | `/generate-image` | gera imagem (T2I), retorna PNG |
+| POST | `/generate-image-edit` | edita imagem (texto+imagem → PNG) via FLUX.2-klein |
 | POST | `/generate-audio` | gera áudio (TTS), retorna WAV |
 | POST | `/transcribe-audio` | transcreve áudio, retorna JSON |
 
 Cada endpoint escolhe o modelo via campo `model`. Os campos por tipo:
-
-- **Imagem** (`/generate-image`): `model` (`flux`|`model2`), `prompt`,
-  `orientation` (`w`=wide 16:9 1024x576, `t`=vertical 9:16 576x1024),
+- **Imagem** (`/generate-image`): `model`
+  (`flux`|`model2`|`sdxl_turbo`|`sd_turbo`|`sdxl_lightning`|`flux2_klein`|
+  `flux2_klein_fp8`|`flux2_klein_base`), `prompt`, `orientation`
+  (`w`=wide 16:9 1024x576, `t`=vertical 9:16 576x1024; os turbo forçam 512x512),
   `num_inference_steps`, `seed`.
+- **Edição de imagem** (`/generate-image-edit`): `image` (arquivo, multipart),
+  `model` (`flux2_klein`|`flux2_klein_fp8`|`flux2_klein_base`), `prompt`
+  (prompt de edição), `orientation`, `num_inference_steps`, `seed`. O
+  FLUX.2-klein unifica T2I e I2I: a imagem de entrada é passada como
+  condição (sem `strength` — edição in-painting-style).
 - **Áudio/TTS** (`/generate-audio`): `model` (`kokoro`|`qwen3tts`), `text`,
   `voice`, `language`.
 - **ASR** (`/transcribe-audio`): `file` (multipart WAV), `model`
@@ -177,6 +184,37 @@ curl -X POST http://SEU_HOST:8000/generate-image \
   -d '{"model":"model2","prompt":"viajante solitario num penhasco ao amanhecer","orientation":"w","num_inference_steps":4}' -o sdxl_wide.png
 ```
 
+### Imagem — FLUX.2-klein-4B (bf16, offload) wide, 4 steps
+```bash
+curl -X POST http://SEU_HOST:8000/generate-image \
+  -H "Content-Type: application/json" \
+  -d '{"model":"flux2_klein","prompt":"viajante solitario num penhasco ao amanhecer","orientation":"w","num_inference_steps":4}' -o klein_wide.png
+```
+
+### Imagem — SDXL-Turbo (512x512 fixo, mais rapido) 4 steps
+```bash
+curl -X POST http://SEU_HOST:8000/generate-image \
+  -H "Content-Type: application/json" \
+  -d '{"model":"sdxl_turbo","prompt":"viajante solitario num penhasco ao amanhecer","num_inference_steps":4}' -o sdxl_turbo.png
+```
+
+> `sdxl_turbo`/`sd_turbo` ignoram `orientation` e forçam 512x512 (checkpoint
+> treinado só nessa resolução). `sd_turbo` é o mais leve (~3GB VRAM, ~2s).
+
+### Edição de imagem — FLUX.2-klein I2I (texto + imagem → PNG)
+```bash
+curl -X POST http://SEU_HOST:8000/generate-image-edit \
+  -F "image=@entrada.png" \
+  -F "model=flux2_klein" \
+  -F "prompt=a mesma cena, porem a noite com iluminacao neon" \
+  -F "num_inference_steps=4" -o editada.png
+```
+
+> O `/generate-image-edit` aceita um arquivo de imagem (`image`) + prompt de
+> edição. Modelos: `flux2_klein` (bf16), `flux2_klein_fp8` (fp8 dequantizado),
+> `flux2_klein_base` (não-destilado, use ~20 steps e guidance>0). O FLUX.2-klein
+> unifica T2I e I2I num pipeline; não use `strength` (edição in-painting-style).
+
 > FLUX na 12GB usa `sequential_cpu_offload` (texto em CPU) → cada geracao
 > leva ~5-8 min. SDXL e mais rapido. A API serializa 1 request por vez.
 
@@ -253,6 +291,18 @@ curl http://SEU_HOST:8000/file/<filename> -o saida.ext
 | `parakeet` | ASR | `MODEL_G_REPO` (nvidia/parakeet-tdt-0.6b-v3) | JSON |
 | `qwen3asr_06b` | ASR | `MODEL_H_REPO` (Qwen/Qwen3-ASR-0.6B) + ForcedAligner | JSON |
 | `qwen3asr_17b` | ASR | `MODEL_I_REPO` (Qwen/Qwen3-ASR-1.7B) + ForcedAligner | JSON |
+| `sdxl_turbo` | imagem | `MODEL_J_REPO` (stabilityai/sdxl-turbo) | PNG |
+| `sd_turbo` | imagem | `MODEL_K_REPO` (stabilityai/sd-turbo) | PNG |
+| `sdxl_lightning` | imagem | `MODEL_L_REPO` (ByteDance/SDXL-Lightning) | PNG |
+| `flux2_klein` | imagem | `MODEL_M_REPO` (black-forest-labs/FLUX.2-klein-4B) | PNG |
+| `flux2_klein_fp8` | imagem | `MODEL_N_REPO` (black-forest-labs/FLUX.2-klein-4b-fp8) | PNG |
+| `flux2_klein_base` | imagem | `MODEL_O_REPO` (black-forest-labs/FLUX.2-klein-base-4B) | PNG |
+| `flux2_klein` / `flux2_klein_fp8` / `flux2_klein_base` | **edição** (`/generate-image-edit`) | mesmos repos acima | PNG |
+
+> Os 3 `flux2_klein*` também fazem **edição de imagem** via
+> `/generate-image-edit` (texto + imagem → PNG). O `unsloth/FLUX.2-klein-4B-GGUF`
+> **não** foi integrado: exige loader `flux-gguf` que não existe no PyPI nem no
+> diffusers 0.39 (bloqueio de ambiente, não do modelo).
 
 Todos os modelos são carregados **lazy** no primeiro request e permanecem na
 GPU; a concorrência é serializada (1 request por vez) para não sobrecarregar.

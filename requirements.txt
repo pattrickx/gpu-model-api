@@ -3,7 +3,8 @@ uvicorn[standard]==0.34.0
 python-dotenv==1.0.1
 huggingface_hub==0.27.1
 torch==2.7.1
-diffusers==0.33.1
+# FLUX.2-klein (Flux2KleinPipeline) exige diffusers>=0.37; usar 0.39.0.
+diffusers==0.39.0
 transformers==4.49.0
 accelerate==1.6.0
 safetensors==0.5.2
@@ -18,5 +19,9 @@ kokoro==0.9.2
 qwen-tts
 soundfile==0.13.1
 scipy==1.13.1
-# ---- ASR (Whisper-large-v3-turbo) ----
+# ---- ASR (Whisper-large-v3-turbo, CrisperWhisper, Qwen3-ASR) ----
 librosa==0.10.2
+qwen-asr
+onnxruntime
+# ---- Imagem (SDXL-Turbo, SD-Turbo, SDXL-Lightning, FLUX.2-klein) ----
+imageio-ffmpeg
